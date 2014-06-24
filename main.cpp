@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include <cassert>
 #include <cstring>
+#include <aio.h>
 
 #include "progress.hpp"
 
@@ -55,8 +56,9 @@ int main(int argc, char **argv) {
   // calculate buffer sizes
   size_t buffer_size = block_size * blocks_at_once;
   size_t buffer_length = buffer_size / sizeof(char);
-  char *write_buffer = (char*) valloc(buffer_size);
-  char *read_buffer = (char*) valloc(buffer_size);
+  char *write_buffer = (char *)valloc(buffer_size);
+  char *write_buffer_next = (char *)valloc(buffer_size);
+  char *read_buffer = (char *)valloc(buffer_size);
 
   // open the device
   int fd = open(device, O_LARGEFILE | O_RDWR | O_DIRECT);
@@ -71,40 +73,63 @@ int main(int argc, char **argv) {
     perror("BLKGETSIZE");
     return 1;
   }
+  if (device_size % buffer_size != 0) {
+    std::cerr << "WARNING: incompatible buffer size, truncating device"
+              << std::endl;
+    device_size = (device_size / buffer_size) * buffer_size;
+  }
   uint64_t blocks = device_size / block_size;
+
+  // prepare the initial buffer
+  fillrandom(write_buffer_next, buffer_length);
+  strcpy(write_buffer_next, "START");
+
+  // create the aio control block
+  aiocb cb;
+  memset(&cb, 0, sizeof(aiocb));
+  cb.aio_nbytes = buffer_size;
+  cb.aio_fildes = fd;
+  cb.aio_buf = read_buffer;
 
   // main loop
   Progress indicator(blocks);
   indicator.start();
   for (uint64_t i = 0; i < blocks; i += blocks_at_once) {
-    // check current offset
-    off_t offset = lseek(fd, 0, SEEK_CUR);
-    assert(offset == (int64_t)(i * block_size));
+    // swap buffers
+    char *temp = write_buffer;
+    write_buffer = write_buffer_next;
+    write_buffer_next = temp;
 
-    // generate data
-    uint64_t current_blocks = std::min((uint64_t)blocks_at_once, blocks - i);
-    uint64_t current_buffer_length = current_blocks * block_size;
-    fillrandom(write_buffer, current_buffer_length);
-    if (i == 0)
-      strcpy(write_buffer, "START");
-    else if (i + blocks_at_once >= blocks)
-      strcpy(write_buffer + current_buffer_length - 4, "STOP");
-
-    // process data
+    // enqueue io
+    cb.aio_offset = i * block_size;
     if (do_read) {
-      read(fd, read_buffer, current_buffer_length);
-      if (errno) {
-        perror("read");
+      if (aio_read(&cb)) {
+        perror("aio_read submit");
         return 1;
-      }
-      if (memcmp(read_buffer, write_buffer, current_buffer_length)) {
-        std::cerr << "Mismatch around block " << i << std::endl;
       }
     } else {
-      write(fd, write_buffer, buffer_size);
-      if (errno) {
-        perror("write");
+      cb.aio_buf = write_buffer;
+      if (aio_write(&cb)) {
+        perror("aio_write submit");
         return 1;
+      }
+    }
+
+    // generate next data
+    fillrandom(write_buffer_next, buffer_size);
+    if (i + blocks_at_once >= blocks)
+      strcpy(write_buffer_next + buffer_size - 4, "STOP");
+
+    // process io
+    while (aio_error(&cb) == EINPROGRESS) {
+    }
+    if (aio_error(&cb)) {
+      perror("aio_read or aio_write");
+      return -1;
+    }
+    if (do_read) {
+      if (memcmp(read_buffer, write_buffer, buffer_size)) {
+        std::cerr << "Mismatch around block " << i << std::endl;
       }
     }
 
@@ -114,6 +139,7 @@ int main(int argc, char **argv) {
   // clean-up
   free(read_buffer);
   free(write_buffer);
+  free(write_buffer_next);
   close(fd);
   return 0;
 }

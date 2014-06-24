@@ -2,7 +2,7 @@
 all: blocktest
 
 blocktest: main.cpp progress.hpp
-	g++ -O3 $< -o $@ -Wall -std=c++11
+	g++ -O3 -lrt $< -o $@ -Wall -std=c++11
 
 .PHONY: clean
 clean:
