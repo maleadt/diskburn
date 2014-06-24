@@ -74,9 +74,10 @@ int main(int argc, char **argv) {
     return 1;
   }
   if (device_size % buffer_size != 0) {
-    std::cerr << "WARNING: incompatible buffer size, truncating device"
+    uint64_t compatible_device_size = (device_size / buffer_size) * buffer_size;
+    std::cerr << "WARNING: incompatible device size, truncating "
+              << (device_size - compatible_device_size) << " bytes"
               << std::endl;
-    device_size = (device_size / buffer_size) * buffer_size;
   }
   uint64_t blocks = device_size / block_size;
 
