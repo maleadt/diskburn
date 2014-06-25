@@ -130,6 +130,7 @@ int main(int argc, char **argv) {
                   << std::endl;
         return 1;
     }
+    // TODO: BLKSSZGET or pagesize?
     size_t buffer_length = buffer_size / sizeof(char);
     size_t alignment = std::max(sizeof(uint64_t), (size_t)getpagesize());
     char *write_buffer, *write_buffer_next, *read_buffer;
