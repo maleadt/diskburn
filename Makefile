@@ -8,9 +8,9 @@ CC=gcc
 CXX=g++
 
 DEFS=-D_FILE_OFFSET_BITS=64
-CFLAGS=-O2 -Wall
-CXXFLAGS=-O2 -Wall -std=c++11
-LDFLAGS=-lrt
+CFLAGS=-O2 -Wall -fopenmp
+CXXFLAGS=-O2 -Wall -fopenmp -std=c++11
+LDFLAGS=-lrt -fopenmp
 
 OBJS=main.o
 
