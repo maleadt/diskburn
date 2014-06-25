@@ -58,7 +58,8 @@ static uint64_t hash64shift(uint64_t key) {
     return key;
 }
 
-static void fill(char *buffer, size_t bufferSize, uint64_t offset, Fill f) {
+static void fill(unsigned char *buffer, size_t bufferSize, uint64_t offset,
+                 Fill f) {
     unsigned int chars_per_uint64 = sizeof(uint64_t) / sizeof(char);
     switch (f) {
     case Fill::zero:
@@ -145,7 +146,7 @@ int main(int argc, char **argv) {
     // TODO: BLKSSZGET or pagesize?
     size_t buffer_length = buffer_size / sizeof(char);
     size_t alignment = std::max(sizeof(uint64_t), (size_t)getpagesize());
-    char *write_buffer, *write_buffer_next, *read_buffer;
+    unsigned char *write_buffer, *write_buffer_next, *read_buffer;
     posix_memalign((void **)&write_buffer, alignment, buffer_size);
     posix_memalign((void **)&write_buffer_next, alignment, buffer_size);
     if (t == Task::read)
@@ -179,7 +180,7 @@ int main(int argc, char **argv) {
 
     // prepare the initial buffer
     fill(write_buffer_next, buffer_length, 0, f);
-    strncpy(write_buffer_next, "START", 5);
+    strncpy((char *)write_buffer_next, "START", 5);
 
     // main loop
     Progress indicator(blocks);
@@ -190,7 +191,7 @@ int main(int argc, char **argv) {
         assert(offset == (int64_t)(i * block_size));
 
         // swap buffers
-        char *temp = write_buffer;
+        unsigned char *temp = write_buffer;
         write_buffer = write_buffer_next;
         write_buffer_next = temp;
         size_t current_buffer_size =
@@ -203,7 +204,8 @@ int main(int argc, char **argv) {
             {
                 // prepare current data
                 if (i + blocks_at_once >= blocks)
-                    strncpy(write_buffer + current_buffer_size - 4, "STOP", 4);
+                    strncpy((char *)write_buffer + current_buffer_size - 4,
+                            "STOP", 4);
 
                 // perform io
                 if (t == Task::read) {
@@ -241,11 +243,9 @@ int main(int argc, char **argv) {
                         std::cerr << "Mismatch in block " << block << ": byte "
                                   << byte;
                         char bytestr[4];
-                        sprintf(bytestr, "0x%02X",
-                                (unsigned char)read_buffer[j]);
+                        sprintf(bytestr, "0x%02X", read_buffer[j]);
                         std::cerr << " reads " << bytestr;
-                        sprintf(bytestr, "0x%02X",
-                                (unsigned char)write_buffer[j]);
+                        sprintf(bytestr, "0x%02X", write_buffer[j]);
                         std::cerr << " instead of " << bytestr << std::endl;
                     }
                 }
