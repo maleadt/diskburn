@@ -11,7 +11,7 @@ CFLAGS=-O2 -Wall
 CXXFLAGS=-O2 -Wall -std=c++11
 LDFLAGS=-lrt
 
-OBJS=main.o xxhash.o
+OBJS=main.o
 
 %.o: %.c
 	$(CC) -c $< -o $@ $(CFLAGS)

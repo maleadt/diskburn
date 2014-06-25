@@ -42,36 +42,57 @@ multiple next buffers, in multithreaded fashion?
 
 // Local
 #include "progress.hpp"
-#include "xxhash.h"
-
-static uint64_t r = 1442695040888963407UL;
-
-static inline uint64_t xorshift() {
-    r ^= (r >> 17);
-    r ^= (r << 31);
-    r ^= (r >> 8);
-    return r;
-}
-
-void fillrandom(char *buffer, size_t bufferSize) {
-    // TODO: omp parallel for here, when offset based
-    for (size_t index = 0; index < bufferSize; index++)
-        *(buffer + index) = (char)xorshift();
-}
 
 enum class Mode {
     READ,
     WRITE
 };
 
+enum class Fill {
+    ZERO,
+    INDEX,
+    HASH
+};
+
+static uint64_t hash64shift(uint64_t key) {
+    key = (~key) + (key << 21); // key = (key << 21) - key - 1;
+    key = key ^ (key >> 24);
+    key = (key + (key << 3)) + (key << 8); // key * 265
+    key = key ^ (key >> 14);
+    key = (key + (key << 2)) + (key << 4); // key * 21
+    key = key ^ (key >> 28);
+    key = key + (key << 31);
+    return key;
+}
+
+void fill(char *buffer, size_t bufferSize, uint64_t offset, Fill f) {
+    // TODO: openmp?
+    unsigned int chars_per_uint64 = sizeof(uint64_t) / sizeof(char);
+    switch (f) {
+    case Fill::ZERO:
+        for (size_t index = 0; index < bufferSize; index += chars_per_uint64)
+            *(uint64_t *)(buffer + index) = 0;
+        break;
+    case Fill::INDEX:
+        for (size_t index = 0; index < bufferSize; index += chars_per_uint64)
+            *(uint64_t *)(buffer + index) = offset + index;
+        break;
+    case Fill::HASH:
+        for (size_t index = 0; index < bufferSize; index += chars_per_uint64)
+            *(uint64_t *)(buffer + index) = hash64shift(offset + index);
+        break;
+    }
+}
+
 int main(int argc, char **argv) {
     // parse options
     Mode m = Mode::READ;
+    Fill f = Fill::ZERO;
     int block_size = 4096;
     int blocks_at_once = 8192;
     int c;
     optarg = NULL;
-    while ((c = getopt(argc, argv, "rwb:c:")) != -1) {
+    while ((c = getopt(argc, argv, "rwzihb:c:")) != -1) {
         switch (c) {
         // program modes
         case 'r':
@@ -79,6 +100,16 @@ int main(int argc, char **argv) {
             break;
         case 'w':
             m = Mode::WRITE;
+            break;
+        // fill modes
+        case 'z':
+            f = Fill::ZERO;
+            break;
+        case 'i':
+            f = Fill::INDEX;
+            break;
+        case 'h':
+            f = Fill::HASH;
             break;
         // io parameters
         case 'b':
@@ -104,10 +135,16 @@ int main(int argc, char **argv) {
 
     // calculate buffer sizes
     size_t buffer_size = block_size * blocks_at_once;
+    if (buffer_size % sizeof(uint64_t) != 0) {
+        std::cerr << "Buffer size should align with sizeof(uint64_t)"
+                  << std::endl;
+        return 1;
+    }
     size_t buffer_length = buffer_size / sizeof(char);
-    char *write_buffer = (char *)valloc(buffer_size);
-    char *write_buffer_next = (char *)valloc(buffer_size);
-    char *read_buffer = (char *)valloc(buffer_size);
+    size_t alignment = std::max(sizeof(uint64_t), (size_t) 512);
+    char *write_buffer = (char *)aligned_alloc(alignment, buffer_size);
+    char *write_buffer_next = (char *)aligned_alloc(alignment, buffer_size);
+    char *read_buffer = (char *)aligned_alloc(alignment, buffer_size);
 
     // open the device
     int fd = open(device, O_LARGEFILE | O_RDWR | O_DIRECT);
@@ -136,7 +173,7 @@ int main(int argc, char **argv) {
     uint64_t blocks = device_size / block_size;
 
     // prepare the initial buffer
-    fillrandom(write_buffer_next, buffer_length);
+    fill(write_buffer_next, buffer_length, 0, f);
     strcpy(write_buffer_next, "START");
 
     // create the aio control block
@@ -181,7 +218,7 @@ int main(int argc, char **argv) {
         }
 
         // generate next data
-        fillrandom(write_buffer_next, buffer_size);
+        fill(write_buffer_next, buffer_size, cb.aio_offset+current_buffer_size, f);
 
         // process io
         while (aio_error(&cb) == EINPROGRESS) {
