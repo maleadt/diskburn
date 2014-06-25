@@ -1,7 +1,6 @@
 
 /*
-diskburn
---------
+TODO
 
 -r: read
 -w: write
@@ -14,12 +13,6 @@ diskburn
 -s: sequential
 -r: random
 
--b: block size
--c: blocks-at-once
-
-device
-
-don't truncate
 multiple next buffers, in multithreaded fashion?
  */
 
@@ -140,13 +133,6 @@ int main(int argc, char **argv) {
         perror("Could not get device size");
         return 1;
     }
-    if (device_size % buffer_size != 0) {
-        uint64_t compatible_device_size =
-            (device_size / buffer_size) * buffer_size;
-        std::cerr << "WARNING: incompatible device size, truncating "
-                  << (device_size - compatible_device_size) << " bytes"
-                  << std::endl;
-    }
     uint64_t blocks = device_size / block_size;
 
     // prepare the initial buffer
@@ -156,9 +142,12 @@ int main(int argc, char **argv) {
     // create the aio control block
     aiocb cb;
     memset(&cb, 0, sizeof(aiocb));
-    cb.aio_nbytes = buffer_size;
     cb.aio_fildes = fd;
-    cb.aio_buf = read_buffer;
+    if (m == Mode::READ) {
+        // write buffers are configured within the loop,
+        // since we have two of them
+        cb.aio_buf = read_buffer;
+    }
 
     // main loop
     Progress indicator(blocks);
@@ -169,8 +158,15 @@ int main(int argc, char **argv) {
         write_buffer = write_buffer_next;
         write_buffer_next = temp;
 
+        // prepare current data
+        size_t current_buffer_size =
+            block_size * std::min(blocks_at_once, (int)(blocks - i));
+        if (i + blocks_at_once >= blocks)
+            strcpy(write_buffer + current_buffer_size - 4, "STOP");
+
         // enqueue io
         cb.aio_offset = i * block_size;
+        cb.aio_nbytes = current_buffer_size;
         if (m == Mode::READ) {
             if (aio_read(&cb)) {
                 perror("aio_read submit");
@@ -186,8 +182,6 @@ int main(int argc, char **argv) {
 
         // generate next data
         fillrandom(write_buffer_next, buffer_size);
-        if (i + blocks_at_once >= blocks)
-            strcpy(write_buffer_next + buffer_size - 4, "STOP");
 
         // process io
         while (aio_error(&cb) == EINPROGRESS) {
@@ -197,7 +191,7 @@ int main(int argc, char **argv) {
             return -1;
         }
         if (m == Mode::READ) {
-            if (memcmp(read_buffer, write_buffer, buffer_size)) {
+            if (memcmp(read_buffer, write_buffer, current_buffer_size)) {
                 std::cerr << "Mismatch around block " << i << std::endl;
             }
         }
