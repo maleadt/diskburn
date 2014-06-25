@@ -31,9 +31,6 @@ multiple next buffers, in multithreaded fashion?
 #include <sstream>
 #include <vector>
 
-// POSIX
-#include <aio.h>
-
 // Local
 #include "progress.hpp"
 
@@ -71,7 +68,7 @@ static void fill(char *buffer, size_t bufferSize, uint64_t offset, Fill f) {
             *(uint64_t *)(buffer + index) = offset + index;
         break;
     case Fill::hash:
-        #pragma omp parallel for
+#pragma omp parallel for
         for (size_t index = 0; index < bufferSize; index += chars_per_uint64)
             *(uint64_t *)(buffer + index) = hash64shift(offset + index);
         break;
@@ -137,9 +134,9 @@ int main(int argc, char **argv) {
     size_t buffer_length = buffer_size / sizeof(char);
     size_t alignment = std::max(sizeof(uint64_t), (size_t)getpagesize());
     char *write_buffer, *write_buffer_next, *read_buffer;
-    posix_memalign((void**)&write_buffer, alignment, buffer_size);
-    posix_memalign((void**)&write_buffer_next, alignment, buffer_size);
-    posix_memalign((void**)&read_buffer, alignment, buffer_size);
+    posix_memalign((void **)&write_buffer, alignment, buffer_size);
+    posix_memalign((void **)&write_buffer_next, alignment, buffer_size);
+    posix_memalign((void **)&read_buffer, alignment, buffer_size);
 
     // open the device
     int fd = open(device, O_RDWR | O_DIRECT);
@@ -171,58 +168,56 @@ int main(int argc, char **argv) {
     fill(write_buffer_next, buffer_length, 0, f);
     strcpy(write_buffer_next, "START");
 
-    // create the aio control block
-    aiocb cb;
-    memset(&cb, 0, sizeof(aiocb));
-    cb.aio_fildes = fd;
-    if (m == Mode::read) {
-        // write buffers are configured within the loop,
-        // since we have two of them
-        cb.aio_buf = read_buffer;
-    }
-
     // main loop
     Progress indicator(blocks);
     indicator.start();
     for (uint64_t i = 0; i < blocks; i += blocks_at_once) {
+        // check current offset
+        off_t offset = lseek(fd, 0, SEEK_CUR);
+        assert(offset == (int64_t)(i * block_size));
+
         // swap buffers
         char *temp = write_buffer;
         write_buffer = write_buffer_next;
         write_buffer_next = temp;
-
-        // prepare current data
         size_t current_buffer_size =
             block_size * std::min(blocks_at_once, (int)(blocks - i));
-        if (i + blocks_at_once >= blocks)
-            strcpy(write_buffer + current_buffer_size - 4, "STOP");
 
-        // enqueue io
-        cb.aio_offset = i * block_size;
-        cb.aio_nbytes = current_buffer_size;
-        if (m == Mode::read) {
-            if (aio_read(&cb)) {
-                perror("aio_read submit");
-                return 1;
+        bool error = false;
+#pragma omp parallel sections
+        {
+#pragma omp section
+            {
+                // prepare current data
+                if (i + blocks_at_once >= blocks)
+                    strcpy(write_buffer + current_buffer_size - 4, "STOP");
+
+                // perform io
+                if (m == Mode::read) {
+                    read(fd, read_buffer, current_buffer_size);
+                    if (errno) {
+                        perror("Could not read data");
+                        error = true;
+                    }
+                } else if (m == Mode::write) {
+                    write(fd, write_buffer, current_buffer_size);
+                    if (errno) {
+                        perror("Could not write data");
+                        error = true;
+                    }
+                }
             }
-        } else if (m == Mode::write) {
-            cb.aio_buf = write_buffer;
-            if (aio_write(&cb)) {
-                perror("aio_write submit");
-                return 1;
+#pragma omp section
+            {
+                // generate next data
+                fill(write_buffer_next, buffer_size,
+                     offset + current_buffer_size, f);
             }
         }
-
-        // generate next data
-        fill(write_buffer_next, buffer_size,
-             cb.aio_offset + current_buffer_size, f);
+        if (error)
+            return 1;
 
         // process io
-        while (aio_error(&cb) == EINPROGRESS) {
-        }
-        if ((errno = aio_error(&cb))) {
-            perror("aio_read or aio_write");
-            return -1;
-        }
         if (m == Mode::read) {
             if (memcmp(read_buffer, write_buffer, current_buffer_size)) {
                 std::cerr << "Mismatch around block " << i << std::endl;

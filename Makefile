@@ -10,7 +10,7 @@ CXX=g++
 DEFS=-D_FILE_OFFSET_BITS=64
 CFLAGS=-O2 -Wall -fopenmp
 CXXFLAGS=-O2 -Wall -fopenmp -std=c++11
-LDFLAGS=-lrt -fopenmp
+LDFLAGS=-fopenmp
 
 OBJS=main.o
 
