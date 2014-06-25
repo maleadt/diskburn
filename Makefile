@@ -4,18 +4,13 @@
 .PHONY: all
 all: diskburn
 
-CC=gcc
 CXX=g++
 
 DEFS=-D_FILE_OFFSET_BITS=64
-CFLAGS=-O2 -Wall -fopenmp
-CXXFLAGS=-O2 -Wall -fopenmp -std=c++11
+CXXFLAGS=-O3 -DNDEBUG -Wall -fopenmp -std=c++11
 LDFLAGS=-fopenmp
 
 OBJS=main.o
-
-%.o: %.c
-	$(CC) -c $< -o $@ $(CFLAGS) $(DEFS)
 
 %.o: %.cpp
 	$(CXX) -c $< -o $@ $(CXXFLAGS) $(DEFS)
