@@ -44,6 +44,12 @@ class Progress {
         setPct(0);
     }
 
+    void draw() {
+        endTime = system_clock::now();
+        setPct(static_cast<double>(cur) / n);
+        lastCheck = endTime;
+    }
+
     void operator++() {
         if (cur >= n)
             return;

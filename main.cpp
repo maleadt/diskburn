@@ -33,7 +33,7 @@ multiple next buffers, in multithreaded fashion?
 
 enum class Task {
     write,
-    verify
+    read
 };
 
 enum class Mode {
@@ -78,27 +78,27 @@ static void fill(char *buffer, size_t bufferSize, uint64_t offset, Fill f) {
 
 int main(int argc, char **argv) {
     // parse options
-    Task t = Task::verify;
+    Task t = Task::read;
     Mode m = Mode::sequential;
     Fill f = Fill::zero;
     int block_size = 4096;
     int blocks_at_once = 8192;
     int c;
     optarg = NULL;
-    while ((c = getopt(argc, argv, "wvsrzihb:c:")) != -1) {
+    while ((c = getopt(argc, argv, "wrstzihb:c:")) != -1) {
         switch (c) {
         // burn-in tasks
         case 'w':
             t = Task::write;
             break;
-        case 'v':
-            t = Task::verify;
+        case 'r':
+            t = Task::read;
             break;
         // scanning modes
         case 's':
             m = Mode::sequential;
             break;
-        case 'r':
+        case 't':
             m = Mode::random;
             std::cerr << "Random mode not implemented yet" << std::endl;
             return 1;
@@ -132,7 +132,7 @@ int main(int argc, char **argv) {
         return 1;
     }
     char *device = argv[optind];
-    std::cout << "Burn-in task: " << (t == Task::write ? "write" : "verify")
+    std::cout << "Burn-in task: " << (t == Task::write ? "write" : "read")
               << std::endl;
 
     // calculate buffer sizes
@@ -148,7 +148,7 @@ int main(int argc, char **argv) {
     char *write_buffer, *write_buffer_next, *read_buffer;
     posix_memalign((void **)&write_buffer, alignment, buffer_size);
     posix_memalign((void **)&write_buffer_next, alignment, buffer_size);
-    if (t == Task::verify)
+    if (t == Task::read)
         posix_memalign((void **)&read_buffer, alignment, buffer_size);
 
     // open the device
@@ -206,7 +206,7 @@ int main(int argc, char **argv) {
                     strncpy(write_buffer + current_buffer_size - 4, "STOP", 4);
 
                 // perform io
-                if (t == Task::verify) {
+                if (t == Task::read) {
                     read(fd, read_buffer, current_buffer_size);
                     if (errno) {
                         perror("Could not read data");
@@ -231,9 +231,25 @@ int main(int argc, char **argv) {
             return 1;
 
         // process io
-        if (t == Task::verify) {
-            if (memcmp(read_buffer, write_buffer, current_buffer_size)) {
-                std::cerr << "Mismatch around block " << i << std::endl;
+        if (t == Task::read) {
+            if (std::memcmp(read_buffer, write_buffer, current_buffer_size)) {
+                std::cout << std::endl;
+                for (uint64_t j = 0; j < current_buffer_size; j++) {
+                    if (write_buffer[j] != read_buffer[j]) {
+                        uint64_t block = i + j / block_size;
+                        uint64_t byte = j % block_size;
+                        std::cerr << "Mismatch in block " << block << ": byte "
+                                  << byte;
+                        char bytestr[4];
+                        sprintf(bytestr, "0x%02X",
+                                (unsigned char)read_buffer[j]);
+                        std::cerr << " reads " << bytestr;
+                        sprintf(bytestr, "0x%02X",
+                                (unsigned char)write_buffer[j]);
+                        std::cerr << " instead of " << bytestr << std::endl;
+                    }
+                }
+                indicator.draw();
             }
         }
 
@@ -241,7 +257,7 @@ int main(int argc, char **argv) {
     }
 
     // clean-up
-    if (t == Task::verify)
+    if (t == Task::read)
         free(read_buffer);
     free(write_buffer);
     free(write_buffer_next);
