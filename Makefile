@@ -2,7 +2,7 @@
     MAKEFLAGS += -r
 
 .PHONY: all
-all: blocktest
+all: diskburn
 
 CC=gcc
 CXX=g++
@@ -19,9 +19,15 @@ OBJS=main.o xxhash.o
 %.o: %.cpp
 	$(CXX) -c $< -o $@ $(CXXFLAGS)
 
-blocktest: $(OBJS)
+diskburn: $(OBJS)
 	$(CXX) -o $@ $? $(LDFLAGS)
 
 .PHONY: clean
 clean:
-	rm -f blocktest $(OBJS)
+	rm -f diskburn $(OBJS)
+
+.PHONY: loop
+loop:
+	dd if=/dev/zero bs=1M count=128 of=/tmp/loop.img
+	sudo losetup -v /dev/loop0 /tmp/loop.img
+	sudo chown $USER /dev/loop0

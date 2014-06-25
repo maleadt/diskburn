@@ -28,6 +28,7 @@ multiple next buffers, in multithreaded fashion?
 // Linux API's
 #include <sys/ioctl.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <linux/fs.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -50,10 +51,6 @@ multiple next buffers, in multithreaded fashion?
 #include "progress.hpp"
 #include "xxhash.h"
 
-const char *device = "/dev/sda";
-const int block_size = 4096;
-const int blocks_at_once = 8192;
-
 static uint64_t r = 1442695040888963407UL;
 
 static inline uint64_t xorshift() {
@@ -69,24 +66,48 @@ void fillrandom(char *buffer, size_t bufferSize) {
         *(buffer + index) = (char)xorshift();
 }
 
+enum class Mode {
+    READ,
+    WRITE
+};
+
 int main(int argc, char **argv) {
     // parse options
-    bool do_read = true;
+    Mode m = Mode::READ;
+    int block_size = 4096;
+    int blocks_at_once = 8192;
     int c;
-    while ((c = getopt(argc, argv, "rw")) != -1) {
+    optarg = NULL;
+    while ((c = getopt(argc, argv, "rwb:c:")) != -1) {
         switch (c) {
+        // program modes
         case 'r':
-            do_read = true;
+            m = Mode::READ;
             break;
         case 'w':
-            do_read = false;
+            m = Mode::WRITE;
+            break;
+        // io parameters
+        case 'b':
+            block_size = atoi(optarg);
+            break;
+        case 'c':
+            blocks_at_once = atoi(optarg);
             break;
         default:
             return -1;
             break;
         }
     }
-    std::cout << "Program mode: " << (do_read ? "read" : "write") << std::endl;
+
+    // parse positional options
+    if (argc - optind != 1) {
+        std::cerr << "No device specified" << std::endl;
+        return 1;
+    }
+    char *device = argv[optind];
+    std::cout << "Program mode: " << (m == Mode::READ ? "read" : "write")
+              << std::endl;
 
     // calculate buffer sizes
     size_t buffer_size = block_size * blocks_at_once;
@@ -98,14 +119,25 @@ int main(int argc, char **argv) {
     // open the device
     int fd = open(device, O_LARGEFILE | O_RDWR | O_DIRECT);
     if (fd == -1) {
-        perror("open");
+        perror("Could not open device");
+        return 1;
+    }
+
+    // check properties
+    struct stat sb;
+    if (fstat(fd, &sb)) {
+        perror("Could not stat device");
+        return 1;
+    }
+    if ((sb.st_mode & S_IFMT) != S_IFBLK) {
+        std::cerr << "Device is not a block device" << std::endl;
         return 1;
     }
 
     // get device size and calculate block count
     uint64_t device_size = 0;
     if (ioctl(fd, BLKGETSIZE64, &device_size)) {
-        perror("BLKGETSIZE");
+        perror("Could not get device size");
         return 1;
     }
     if (device_size % buffer_size != 0) {
@@ -139,12 +171,12 @@ int main(int argc, char **argv) {
 
         // enqueue io
         cb.aio_offset = i * block_size;
-        if (do_read) {
+        if (m == Mode::READ) {
             if (aio_read(&cb)) {
                 perror("aio_read submit");
                 return 1;
             }
-        } else {
+        } else if (m == Mode::WRITE) {
             cb.aio_buf = write_buffer;
             if (aio_write(&cb)) {
                 perror("aio_write submit");
@@ -164,7 +196,7 @@ int main(int argc, char **argv) {
             perror("aio_read or aio_write");
             return -1;
         }
-        if (do_read) {
+        if (m == Mode::READ) {
             if (memcmp(read_buffer, write_buffer, buffer_size)) {
                 std::cerr << "Mismatch around block " << i << std::endl;
             }
