@@ -6,10 +6,6 @@ TODO
 -w: write
 -x: combined
 
--z: zeros
--h: hash, based on byte offset
--i: iterate, write byte offset
-
 -s: sequential
 -r: random
 
@@ -141,7 +137,7 @@ int main(int argc, char **argv) {
         return 1;
     }
     size_t buffer_length = buffer_size / sizeof(char);
-    size_t alignment = std::max(sizeof(uint64_t), (size_t) 512);
+    size_t alignment = std::max(sizeof(uint64_t), (size_t)512);
     char *write_buffer = (char *)aligned_alloc(alignment, buffer_size);
     char *write_buffer_next = (char *)aligned_alloc(alignment, buffer_size);
     char *read_buffer = (char *)aligned_alloc(alignment, buffer_size);
@@ -153,7 +149,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    // check properties
+    // check its properties
     struct stat sb;
     if (fstat(fd, &sb)) {
         perror("Could not stat device");
@@ -218,12 +214,13 @@ int main(int argc, char **argv) {
         }
 
         // generate next data
-        fill(write_buffer_next, buffer_size, cb.aio_offset+current_buffer_size, f);
+        fill(write_buffer_next, buffer_size,
+             cb.aio_offset + current_buffer_size, f);
 
         // process io
         while (aio_error(&cb) == EINPROGRESS) {
         }
-        if (aio_error(&cb)) {
+        if ((errno = aio_error(&cb))) {
             perror("aio_read or aio_write");
             return -1;
         }
