@@ -1,20 +1,54 @@
+
+/*
+burndisk
+--------
+
+-r: read
+-w: write
+-x: combined
+
+-z: zeros
+-h: hash, based on byte offset
+-i: iterate, write byte offset
+
+-s: sequential
+-r: random
+
+-b: block size
+-c: blocks-at-once
+
+device
+
+don't truncate
+multiple next buffers, in multithreaded fashion?
+ */
+
 #define _LARGEFILE64_SOURCE
 
-#include <iostream>
-#include <fcntl.h>
-#include <linux/fs.h>
+// Linux API's
 #include <sys/ioctl.h>
-#include <iomanip>
-#include <vector>
-#include <ctime>
-#include <sstream>
 #include <sys/types.h>
+#include <linux/fs.h>
 #include <unistd.h>
-#include <cassert>
+#include <fcntl.h>
+
+// C standard library
 #include <cstring>
+#include <cassert>
+#include <ctime>
+
+// C++ standard library
+#include <iostream>
+#include <iomanip>
+#include <sstream>
+#include <vector>
+
+// POSIX
 #include <aio.h>
 
+// Local
 #include "progress.hpp"
+#include "xxhash.h"
 
 const char *device = "/dev/sda";
 const int block_size = 4096;
