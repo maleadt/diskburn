@@ -18,9 +18,9 @@ LDFLAGS=-fopenmp
 LDFLAGS_DEBUG=
 LDFLAGS_RELEASE=
 
-HAVE_CLANG := $(shell which clang++ 1>&2 2>/dev/null; echo $$?)
+#HAVE_CLANG := $(shell which clang++ 1>&2 2>/dev/null; echo $$?)
 ifeq ($(HAVE_CLANG), 0)
-	CXX=$(shell which clang++)
+	CXX = $(shell which clang++)
 	CXXFLAGS_DEBUG += -fsanitize=address
 	LDFLAGS_DEBUG += -fsanitize=address
 endif

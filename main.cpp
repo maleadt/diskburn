@@ -6,9 +6,6 @@ TODO
 
 -t tune
 
--s: sequential
--r: random
-
 multiple next buffers, in multithreaded fashion?
  */
 
@@ -34,9 +31,14 @@ multiple next buffers, in multithreaded fashion?
 // Local
 #include "progress.hpp"
 
+enum class Task {
+    write,
+    verify
+};
+
 enum class Mode {
-    read,
-    write
+    sequential,
+    random
 };
 
 enum class Fill {
@@ -76,20 +78,30 @@ static void fill(char *buffer, size_t bufferSize, uint64_t offset, Fill f) {
 
 int main(int argc, char **argv) {
     // parse options
-    Mode m = Mode::read;
+    Task t = Task::verify;
+    Mode m = Mode::sequential;
     Fill f = Fill::zero;
     int block_size = 4096;
     int blocks_at_once = 8192;
     int c;
     optarg = NULL;
-    while ((c = getopt(argc, argv, "rwzihb:c:")) != -1) {
+    while ((c = getopt(argc, argv, "wvsrzihb:c:")) != -1) {
         switch (c) {
-        // program modes
-        case 'r':
-            m = Mode::read;
-            break;
+        // burn-in tasks
         case 'w':
-            m = Mode::write;
+            t = Task::write;
+            break;
+        case 'v':
+            t = Task::verify;
+            break;
+        // scanning modes
+        case 's':
+            m = Mode::sequential;
+            break;
+        case 'r':
+            m = Mode::random;
+            std::cerr << "Random mode not implemented yet" << std::endl;
+            return 1;
             break;
         // fill modes
         case 'z':
@@ -120,7 +132,7 @@ int main(int argc, char **argv) {
         return 1;
     }
     char *device = argv[optind];
-    std::cout << "Program mode: " << (m == Mode::read ? "read" : "write")
+    std::cout << "Burn-in task: " << (t == Task::write ? "write" : "verify")
               << std::endl;
 
     // calculate buffer sizes
@@ -136,7 +148,8 @@ int main(int argc, char **argv) {
     char *write_buffer, *write_buffer_next, *read_buffer;
     posix_memalign((void **)&write_buffer, alignment, buffer_size);
     posix_memalign((void **)&write_buffer_next, alignment, buffer_size);
-    posix_memalign((void **)&read_buffer, alignment, buffer_size);
+    if (t == Task::verify)
+        posix_memalign((void **)&read_buffer, alignment, buffer_size);
 
     // open the device
     int fd = open(device, O_RDWR | O_DIRECT);
@@ -166,7 +179,7 @@ int main(int argc, char **argv) {
 
     // prepare the initial buffer
     fill(write_buffer_next, buffer_length, 0, f);
-    strcpy(write_buffer_next, "START");
+    strncpy(write_buffer_next, "START", 5);
 
     // main loop
     Progress indicator(blocks);
@@ -190,16 +203,16 @@ int main(int argc, char **argv) {
             {
                 // prepare current data
                 if (i + blocks_at_once >= blocks)
-                    strcpy(write_buffer + current_buffer_size - 4, "STOP");
+                    strncpy(write_buffer + current_buffer_size - 4, "STOP", 4);
 
                 // perform io
-                if (m == Mode::read) {
+                if (t == Task::verify) {
                     read(fd, read_buffer, current_buffer_size);
                     if (errno) {
                         perror("Could not read data");
                         error = true;
                     }
-                } else if (m == Mode::write) {
+                } else if (t == Task::write) {
                     write(fd, write_buffer, current_buffer_size);
                     if (errno) {
                         perror("Could not write data");
@@ -218,7 +231,7 @@ int main(int argc, char **argv) {
             return 1;
 
         // process io
-        if (m == Mode::read) {
+        if (t == Task::verify) {
             if (memcmp(read_buffer, write_buffer, current_buffer_size)) {
                 std::cerr << "Mismatch around block " << i << std::endl;
             }
@@ -228,7 +241,8 @@ int main(int argc, char **argv) {
     }
 
     // clean-up
-    free(read_buffer);
+    if (t == Task::verify)
+        free(read_buffer);
     free(write_buffer);
     free(write_buffer_next);
     close(fd);
