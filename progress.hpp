@@ -6,8 +6,8 @@
 // See MIT-LICENSE.
 
 // Include guard
-#ifndef _TRACETRANSFORM_PROGRESS_
-#define _TRACETRANSFORM_PROGRESS_
+#ifndef _DISKBURN_PROGRESS_
+#define _DISKBURN_PROGRESS_
 
 // Standard library
 #include <iostream>

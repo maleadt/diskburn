@@ -7,6 +7,7 @@ all: diskburn
 CC=gcc
 CXX=g++
 
+DEFS=-D_FILE_OFFSET_BITS=64
 CFLAGS=-O2 -Wall
 CXXFLAGS=-O2 -Wall -std=c++11
 LDFLAGS=-lrt
@@ -14,10 +15,10 @@ LDFLAGS=-lrt
 OBJS=main.o
 
 %.o: %.c
-	$(CC) -c $< -o $@ $(CFLAGS)
+	$(CC) -c $< -o $@ $(CFLAGS) $(DEFS)
 
 %.o: %.cpp
-	$(CXX) -c $< -o $@ $(CXXFLAGS)
+	$(CXX) -c $< -o $@ $(CXXFLAGS) $(DEFS)
 
 diskburn: $(OBJS)
 	$(CXX) -o $@ $? $(LDFLAGS)

@@ -2,17 +2,15 @@
 /*
 TODO
 
--r: read
--w: write
 -x: combined
+
+-t tune
 
 -s: sequential
 -r: random
 
 multiple next buffers, in multithreaded fashion?
  */
-
-#define _LARGEFILE64_SOURCE
 
 // Linux API's
 #include <sys/ioctl.h>
@@ -61,7 +59,7 @@ static uint64_t hash64shift(uint64_t key) {
     return key;
 }
 
-void fill(char *buffer, size_t bufferSize, uint64_t offset, Fill f) {
+static void fill(char *buffer, size_t bufferSize, uint64_t offset, Fill f) {
     // TODO: openmp?
     unsigned int chars_per_uint64 = sizeof(uint64_t) / sizeof(char);
     switch (f) {
@@ -137,13 +135,13 @@ int main(int argc, char **argv) {
         return 1;
     }
     size_t buffer_length = buffer_size / sizeof(char);
-    size_t alignment = std::max(sizeof(uint64_t), (size_t)512);
+    size_t alignment = std::max(sizeof(uint64_t), (size_t)getpagesize());
     char *write_buffer = (char *)aligned_alloc(alignment, buffer_size);
     char *write_buffer_next = (char *)aligned_alloc(alignment, buffer_size);
     char *read_buffer = (char *)aligned_alloc(alignment, buffer_size);
 
     // open the device
-    int fd = open(device, O_LARGEFILE | O_RDWR | O_DIRECT);
+    int fd = open(device, O_RDWR | O_DIRECT);
     if (fd == -1) {
         perror("Could not open device");
         return 1;
