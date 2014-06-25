@@ -38,14 +38,14 @@ multiple next buffers, in multithreaded fashion?
 #include "progress.hpp"
 
 enum class Mode {
-    READ,
-    WRITE
+    read,
+    write
 };
 
 enum class Fill {
-    ZERO,
-    INDEX,
-    HASH
+    zero,
+    index,
+    hash
 };
 
 static uint64_t hash64shift(uint64_t key) {
@@ -63,15 +63,15 @@ static void fill(char *buffer, size_t bufferSize, uint64_t offset, Fill f) {
     // TODO: openmp?
     unsigned int chars_per_uint64 = sizeof(uint64_t) / sizeof(char);
     switch (f) {
-    case Fill::ZERO:
+    case Fill::zero:
         for (size_t index = 0; index < bufferSize; index += chars_per_uint64)
             *(uint64_t *)(buffer + index) = 0;
         break;
-    case Fill::INDEX:
+    case Fill::index:
         for (size_t index = 0; index < bufferSize; index += chars_per_uint64)
             *(uint64_t *)(buffer + index) = offset + index;
         break;
-    case Fill::HASH:
+    case Fill::hash:
         for (size_t index = 0; index < bufferSize; index += chars_per_uint64)
             *(uint64_t *)(buffer + index) = hash64shift(offset + index);
         break;
@@ -80,8 +80,8 @@ static void fill(char *buffer, size_t bufferSize, uint64_t offset, Fill f) {
 
 int main(int argc, char **argv) {
     // parse options
-    Mode m = Mode::READ;
-    Fill f = Fill::ZERO;
+    Mode m = Mode::read;
+    Fill f = Fill::zero;
     int block_size = 4096;
     int blocks_at_once = 8192;
     int c;
@@ -90,20 +90,20 @@ int main(int argc, char **argv) {
         switch (c) {
         // program modes
         case 'r':
-            m = Mode::READ;
+            m = Mode::read;
             break;
         case 'w':
-            m = Mode::WRITE;
+            m = Mode::write;
             break;
         // fill modes
         case 'z':
-            f = Fill::ZERO;
+            f = Fill::zero;
             break;
         case 'i':
-            f = Fill::INDEX;
+            f = Fill::index;
             break;
         case 'h':
-            f = Fill::HASH;
+            f = Fill::hash;
             break;
         // io parameters
         case 'b':
@@ -124,7 +124,7 @@ int main(int argc, char **argv) {
         return 1;
     }
     char *device = argv[optind];
-    std::cout << "Program mode: " << (m == Mode::READ ? "read" : "write")
+    std::cout << "Program mode: " << (m == Mode::read ? "read" : "write")
               << std::endl;
 
     // calculate buffer sizes
@@ -136,9 +136,10 @@ int main(int argc, char **argv) {
     }
     size_t buffer_length = buffer_size / sizeof(char);
     size_t alignment = std::max(sizeof(uint64_t), (size_t)getpagesize());
-    char *write_buffer = (char *)aligned_alloc(alignment, buffer_size);
-    char *write_buffer_next = (char *)aligned_alloc(alignment, buffer_size);
-    char *read_buffer = (char *)aligned_alloc(alignment, buffer_size);
+    char *write_buffer, *write_buffer_next, *read_buffer;
+    posix_memalign((void**)&write_buffer, alignment, buffer_size);
+    posix_memalign((void**)&write_buffer_next, alignment, buffer_size);
+    posix_memalign((void**)&read_buffer, alignment, buffer_size);
 
     // open the device
     int fd = open(device, O_RDWR | O_DIRECT);
@@ -174,7 +175,7 @@ int main(int argc, char **argv) {
     aiocb cb;
     memset(&cb, 0, sizeof(aiocb));
     cb.aio_fildes = fd;
-    if (m == Mode::READ) {
+    if (m == Mode::read) {
         // write buffers are configured within the loop,
         // since we have two of them
         cb.aio_buf = read_buffer;
@@ -198,12 +199,12 @@ int main(int argc, char **argv) {
         // enqueue io
         cb.aio_offset = i * block_size;
         cb.aio_nbytes = current_buffer_size;
-        if (m == Mode::READ) {
+        if (m == Mode::read) {
             if (aio_read(&cb)) {
                 perror("aio_read submit");
                 return 1;
             }
-        } else if (m == Mode::WRITE) {
+        } else if (m == Mode::write) {
             cb.aio_buf = write_buffer;
             if (aio_write(&cb)) {
                 perror("aio_write submit");
@@ -222,7 +223,7 @@ int main(int argc, char **argv) {
             perror("aio_read or aio_write");
             return -1;
         }
-        if (m == Mode::READ) {
+        if (m == Mode::read) {
             if (memcmp(read_buffer, write_buffer, current_buffer_size)) {
                 std::cerr << "Mismatch around block " << i << std::endl;
             }
