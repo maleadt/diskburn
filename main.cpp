@@ -1,6 +1,6 @@
 
 /*
-burndisk
+diskburn
 --------
 
 -r: read
@@ -64,6 +64,7 @@ static inline uint64_t xorshift() {
 }
 
 void fillrandom(char *buffer, size_t bufferSize) {
+    // TODO: omp parallel for here, when offset based
     for (size_t index = 0; index < bufferSize; index++)
         *(buffer + index) = (char)xorshift();
 }
