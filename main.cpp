@@ -68,7 +68,6 @@ static void fill(char *buffer, size_t bufferSize, uint64_t offset, Fill f) {
             *(uint64_t *)(buffer + index) = offset + index;
         break;
     case Fill::hash:
-#pragma omp parallel for
         for (size_t index = 0; index < bufferSize; index += chars_per_uint64)
             *(uint64_t *)(buffer + index) = hash64shift(offset + index);
         break;
