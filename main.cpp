@@ -1,14 +1,3 @@
-
-/*
-TODO
-
--x: combined
-
--t tune
-
-multiple next buffers, in multithreaded fashion?
- */
-
 // Linux API's
 #include <sys/ioctl.h>
 #include <sys/types.h>
@@ -86,7 +75,7 @@ int main(int argc, char **argv) {
     int blocks_at_once = 8192;
     int c;
     optarg = NULL;
-    while ((c = getopt(argc, argv, "wrstzihb:c:")) != -1) {
+    while ((c = getopt(argc, argv, "wrstzihb:c:")) != EOF) {
         switch (c) {
         // burn-in tasks
         case 'w':
@@ -122,7 +111,7 @@ int main(int argc, char **argv) {
             blocks_at_once = atoi(optarg);
             break;
         default:
-            return -1;
+            return 1;
             break;
         }
     }
